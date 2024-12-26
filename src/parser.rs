@@ -3,9 +3,9 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_while1},
     character::complete::u32,
-    combinator::{opt, value},
+    combinator::value,
     multi::many0,
-    sequence::{delimited, separated_pair},
+    sequence::{delimited, preceded, separated_pair},
     IResult,
 };
 
@@ -50,11 +50,6 @@ pub fn parse_component(input: &str) -> Result<RequestComponent> {
 fn body(input: &str) -> IResult<&str, RequestComponent> {
     let mut path: Vec<PathAccess> = vec![];
 
-    let (input, first_key) = opt(take_while1(|c| c != ':' && c != '=' && c != '['))(input)?;
-    if let Some(first_key) = first_key {
-        path.push(PathAccess::ObjectKey(first_key.to_string()));
-    }
-
     let (input, mut keys) = many0(alt((array_index, object_key, array_end)))(input)?;
     path.append(&mut keys);
 
@@ -73,12 +68,24 @@ fn body(input: &str) -> IResult<&str, RequestComponent> {
 }
 
 fn object_key(input: &str) -> IResult<&str, PathAccess> {
-    let (remainder, key) = delimited(tag("["), take_while1(|c| c != ']'), tag("]"))(input)?;
+    let raw_object_key = take_while1(|c| c != '.' && c != '[' && c != '=' && c != ':');
+
+    let (remainder, key) = alt((
+        delimited(tag("["), take_while1(|c| c != ']'), tag("]")),
+        preceded(tag("."), &raw_object_key),
+        &raw_object_key,
+    ))(input)?;
+
     Ok((remainder, PathAccess::ObjectKey(key.to_string())))
 }
 
 fn array_index(input: &str) -> IResult<&str, PathAccess> {
-    let (remainder, index) = delimited(tag("["), u32, tag("]"))(input)?;
+    let (remainder, index) = alt((
+        delimited(tag("["), u32, tag("]")),
+        preceded(tag("."), u32),
+        u32,
+    ))(input)?;
+
     Ok((remainder, PathAccess::ArrayIndex(index)))
 }
 

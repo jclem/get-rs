@@ -228,6 +228,34 @@ mod tests {
     }
 
     #[test]
+    fn parse_flexible_object_key_body_param() {
+        let components = vec!["foo[bar]baz.qux=quux".to_string()];
+        let mut url_builder = URLBuilder::from_input("http://example.com", "localhost").unwrap();
+        let request = build_request(&mut url_builder, &Session::new(), &components)
+            .unwrap()
+            .build()
+            .unwrap();
+        assert_eq!(
+            request_body(&request),
+            r#"{"foo":{"bar":{"baz":{"qux":"quux"}}}}"#
+        )
+    }
+
+    #[test]
+    fn parse_flexible_array_index_body_param() {
+        let components = vec!["foo[bar]0.qux=quux".to_string()];
+        let mut url_builder = URLBuilder::from_input("http://example.com", "localhost").unwrap();
+        let request = build_request(&mut url_builder, &Session::new(), &components)
+            .unwrap()
+            .build()
+            .unwrap();
+        assert_eq!(
+            request_body(&request),
+            r#"{"foo":{"bar":[{"qux":"quux"}]}}"#
+        )
+    }
+
+    #[test]
     fn parse_flexible_leading_body_param() {
         let components = vec!["[foo][bar]=baz".to_string()];
         let mut url_builder = URLBuilder::from_input("http://example.com", "localhost").unwrap();
