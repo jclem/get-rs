@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.94"
 clap = { version = "4.5.23", features = ["derive"] }
+colored = { version = "2.2.0" }
 form_urlencoded = "1.2.1"
 homedir = "0.3.4"
 http = "1.2.0"

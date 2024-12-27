@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use anyhow::{bail, Result};
 use clap::Parser;
+use colored::Colorize;
 use http::{Method, Version};
 use reqwest::Response;
 
@@ -113,12 +114,14 @@ fn print_request(method: &Method, req: &RequestBuilder) -> Result<()> {
     }
 
     println!(
-        "{}",
-        green(&format!("{} {} {:?}", method, path, req.version))
+        "{} {} {}",
+        method.as_str().green(),
+        path.green(),
+        format!("{:?}", req.version).green(),
     );
 
     for (key, value) in req.headers.iter() {
-        println!("{} {}", cyan(&format!("{}:", key)), value.to_str()?);
+        println!("{} {}", format!("{}:", key).cyan(), value.to_str()?);
     }
 
     if let Some(body) = &req.body {
@@ -131,12 +134,13 @@ fn print_request(method: &Method, req: &RequestBuilder) -> Result<()> {
 async fn print_response(resp: Response, headers: bool, body: bool) -> Result<()> {
     if headers {
         println!(
-            "{}",
-            green(&format!("{:?} {}", resp.version(), resp.status()))
+            "{} {}",
+            format!("{:?}", resp.version()).green(),
+            resp.status().as_str().green()
         );
 
         for (key, value) in resp.headers() {
-            println!("{} {}", cyan(&format!("{}:", key)), value.to_str()?);
+            println!("{} {}", format!("{}:", key).cyan(), value.to_str()?);
         }
 
         if body {
@@ -150,12 +154,4 @@ async fn print_response(resp: Response, headers: bool, body: bool) -> Result<()>
     }
 
     Ok(())
-}
-
-fn green(s: &str) -> String {
-    format!("\x1b[0;32m{}\x1b[0m", s)
-}
-
-fn cyan(s: &str) -> String {
-    format!("\x1b[0;36m{}\x1b[0m", s)
 }
