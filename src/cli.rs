@@ -1,5 +1,3 @@
-use std::env::Args;
-
 use anyhow::Result;
 use clap::Parser;
 use reqwest::RequestBuilder;
@@ -17,10 +15,23 @@ use crate::url_builder::URLBuilder;
 pub struct CLI {
     url: String,
     components: Vec<String>,
+
+    #[arg(
+        long,
+        help = "Path to the config file (defaults to $XDG_CONFIG_HOME/get/config.json"
+    )]
+    config: Option<String>,
 }
 
-pub async fn run(args: Args, config: &Config) -> Result<()> {
-    let cli = CLI::parse_from(args);
+pub async fn run() -> Result<()> {
+    let cli = CLI::parse();
+
+    let config = if let Some(config) = cli.config {
+        Config::load_from_path(&config).await?
+    } else {
+        Config::load().await?
+    };
+
     let mut url_builder = URLBuilder::from_input(&cli.url, &config.fallback_hostname)?;
 
     let authority = url_builder.authority()?;

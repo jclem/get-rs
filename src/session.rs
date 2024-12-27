@@ -70,12 +70,7 @@ impl SessionStore {
     }
 
     async fn load() -> Result<SessionStore> {
-        let sessions_path = Self::get_data_home()?
-            .join("get")
-            .join("sessions.json")
-            .to_str()
-            .context("valid data path")?
-            .to_string();
+        let sessions_path = get_data_home()?.join("get").join("sessions.json");
 
         match File::open(sessions_path).await {
             Ok(mut file) => {
@@ -92,14 +87,14 @@ impl SessionStore {
             Err(err) => Err(err).context("open session store"),
         }
     }
+}
 
-    fn get_data_home() -> Result<PathBuf> {
-        match env::var("XDG_DATA_HOME") {
-            Ok(path) => Ok(Path::new(&path).to_path_buf()),
-            Err(_) => Ok(homedir::my_home()?
-                .context("home dir")?
-                .join(".local")
-                .join("share")),
-        }
+fn get_data_home() -> Result<PathBuf> {
+    match env::var("XDG_DATA_HOME") {
+        Ok(path) => Ok(Path::new(&path).to_path_buf()),
+        Err(_) => Ok(homedir::my_home()?
+            .context("home dir")?
+            .join(".local")
+            .join("share")),
     }
 }
