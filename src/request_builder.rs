@@ -3,8 +3,9 @@ use std::str::FromStr;
 use anyhow::{bail, Context, Result};
 use http::{
     header::{Entry, OccupiedEntry},
-    HeaderMap, HeaderName, HeaderValue,
+    HeaderMap, HeaderName, HeaderValue, Method, Version,
 };
+use reqwest::Response;
 
 use crate::{
     config::Config, json_builder, parser::BodyValue, session::Session, url_builder::URLBuilder,
@@ -16,6 +17,7 @@ pub struct RequestBuilder {
     pub url: URLBuilder,
     pub headers: HeaderMap,
     pub body: Option<String>,
+    pub version: Version,
 }
 
 impl RequestBuilder {
@@ -31,6 +33,13 @@ impl RequestBuilder {
         }
 
         let mut header_map = HeaderMap::new();
+        let mut host = url.hostname.clone().context("hostname parsed")?;
+        if let Some(port) = &url.port {
+            host = format!("{}:{}", host, port);
+        }
+
+        let host_header = HeaderValue::from_str(&host)?;
+        header_map.append("Host", host_header);
 
         if let Some(headers) = session.headers.as_ref() {
             for (key, values) in headers {
@@ -44,6 +53,7 @@ impl RequestBuilder {
             url,
             headers: header_map,
             body: None,
+            version: Version::default(),
         })
     }
 
@@ -95,10 +105,18 @@ impl RequestBuilder {
         Ok(self)
     }
 
+    /// Sets the HTTP version of the request
+    pub fn version(mut self, version: Version) -> Self {
+        self.version = version;
+        self
+    }
+
     /// Sends the request
-    pub async fn send(&mut self) -> Result<()> {
+    pub async fn send(&mut self, method: Method) -> Result<Response> {
         let client = reqwest::Client::new();
-        let mut request = client.get(self.url.build()?);
+        let mut request = client
+            .request(method, self.url.build()?)
+            .version(self.version);
         request = request.headers(self.headers.clone());
 
         let body = self.body.take();
@@ -107,9 +125,9 @@ impl RequestBuilder {
             request = request.body(body);
         }
 
-        request.send().await?;
+        let response = request.send().await?;
 
-        Ok(())
+        Ok(response)
     }
 }
 
