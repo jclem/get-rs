@@ -11,14 +11,48 @@ use nom::{
 
 use crate::json_builder::PathAccess;
 
-#[derive(Debug, PartialEq)]
-pub enum RequestComponent {
-    QueryParam { name: String, value: String },
-    Header { name: String, value: String },
-    BodyValue(BodyValue),
+pub struct ParsedRequest {
+    pub query: Vec<(String, String)>,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<BodyValue>,
 }
 
-#[derive(Debug, PartialEq)]
+impl ParsedRequest {
+    pub fn from_inputs<T>(inputs: &[T]) -> Result<Self>
+    where
+        T: AsRef<str>,
+    {
+        let mut query = vec![];
+        let mut headers = vec![];
+        let mut body = vec![];
+
+        for input in inputs {
+            let component = parse_component(input.as_ref())?;
+
+            match component {
+                RequestComponent::QueryParam { name, value } => {
+                    query.push((name, value));
+                }
+
+                RequestComponent::Header { name, value } => {
+                    headers.push((name, value));
+                }
+
+                RequestComponent::BodyValue(value) => {
+                    body.push(value);
+                }
+            }
+        }
+
+        Ok(Self {
+            query,
+            headers,
+            body,
+        })
+    }
+}
+
+#[derive(Debug)]
 pub enum BodyValue {
     String {
         path: Vec<PathAccess>,
@@ -31,7 +65,14 @@ pub enum BodyValue {
     },
 }
 
-pub fn parse_component(input: &str) -> Result<RequestComponent> {
+#[derive(Debug)]
+enum RequestComponent {
+    QueryParam { name: String, value: String },
+    Header { name: String, value: String },
+    BodyValue(BodyValue),
+}
+
+fn parse_component(input: &str) -> Result<RequestComponent> {
     match alt((query_param, body, header))(input) {
         Ok((remainder, component)) => {
             if remainder.is_empty() {
