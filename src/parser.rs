@@ -1,4 +1,7 @@
+use std::str::FromStr;
+
 use anyhow::{bail, Result};
+use http::{HeaderMap, HeaderName, HeaderValue};
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_while1},
@@ -11,9 +14,10 @@ use nom::{
 
 use crate::json_builder::PathAccess;
 
+#[derive(Debug)]
 pub struct ParsedRequest {
     pub query: Vec<(String, String)>,
-    pub headers: Vec<(String, String)>,
+    pub headers: HeaderMap,
     pub body: Vec<BodyValue>,
 }
 
@@ -23,7 +27,7 @@ impl ParsedRequest {
         T: AsRef<str>,
     {
         let mut query = vec![];
-        let mut headers = vec![];
+        let mut headers = HeaderMap::new();
         let mut body = vec![];
 
         for input in inputs {
@@ -34,8 +38,10 @@ impl ParsedRequest {
                     query.push((name, value));
                 }
 
-                RequestComponent::Header { name, value } => {
-                    headers.push((name, value));
+                RequestComponent::Header { key, value } => {
+                    let key = HeaderName::from_str(&key)?;
+                    let value = HeaderValue::from_str(&value)?;
+                    headers.append(key, value);
                 }
 
                 RequestComponent::BodyValue(value) => {
@@ -68,7 +74,7 @@ pub enum BodyValue {
 #[derive(Debug)]
 enum RequestComponent {
     QueryParam { name: String, value: String },
-    Header { name: String, value: String },
+    Header { key: String, value: String },
     BodyValue(BodyValue),
 }
 
@@ -163,7 +169,7 @@ fn header(input: &str) -> IResult<&str, RequestComponent> {
     Ok((
         remainder,
         RequestComponent::Header {
-            name: name.to_string(),
+            key: name.to_string(),
             value: value.to_string(),
         },
     ))
@@ -181,4 +187,178 @@ fn header_name(input: &str) -> IResult<&str, &str> {
 
 fn header_value(input: &str) -> IResult<&str, &str> {
     take_while1(|_| true)(input)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::json_builder;
+
+    use super::*;
+
+    #[test]
+    fn parse_simple_header() {
+        let request = ParsedRequest::from_inputs(&["foo:bar"]).unwrap();
+
+        let headers = vec![(
+            HeaderName::from_str("foo").unwrap(),
+            HeaderValue::from_str("bar").unwrap(),
+        )];
+
+        assert_eq!(request.headers, HeaderMap::from_iter(headers));
+    }
+
+    #[test]
+    fn parse_quoted_header() {
+        let request = ParsedRequest::from_inputs(&["foo:bar baz"]).unwrap();
+
+        let headers = vec![(
+            HeaderName::from_str("foo").unwrap(),
+            HeaderValue::from_str("bar baz").unwrap(),
+        )];
+
+        assert_eq!(request.headers, HeaderMap::from_iter(headers));
+    }
+
+    #[test]
+    fn reject_bad_header() {
+        let error = ParsedRequest::from_inputs(&["foo bar:baz"]).unwrap_err();
+        assert_eq!(error.to_string(), "Invalid request component");
+    }
+
+    #[test]
+    fn parse_simple_query_param() {
+        let request = ParsedRequest::from_inputs(&["foo==bar"]).unwrap();
+        assert_eq!(request.query, vec![("foo".to_string(), "bar".to_string())]);
+    }
+
+    #[test]
+    fn parse_quoted_query_param() {
+        let request = ParsedRequest::from_inputs(&["foo bar==baz qux"]).unwrap();
+        assert_eq!(
+            request.query,
+            vec![("foo bar".to_string(), "baz qux".to_string())]
+        );
+    }
+
+    #[test]
+    fn parse_simple_body_param() {
+        let request = ParsedRequest::from_inputs(&["foo=bar"]).unwrap();
+        assert_eq!(to_json(&request.body), r#"{"foo":"bar"}"#)
+    }
+
+    #[test]
+    fn parse_nested_body_param() {
+        let request = ParsedRequest::from_inputs(&["foo[bar]=baz"]).unwrap();
+        assert_eq!(to_json(&request.body), r#"{"foo":{"bar":"baz"}}"#)
+    }
+
+    #[test]
+    fn parse_flexible_object_key_body_param() {
+        let request = ParsedRequest::from_inputs(&["foo[bar]baz.qux=quux"]).unwrap();
+        assert_eq!(
+            to_json(&request.body),
+            r#"{"foo":{"bar":{"baz":{"qux":"quux"}}}}"#
+        )
+    }
+
+    #[test]
+    fn parse_flexible_array_index_body_param() {
+        let request = ParsedRequest::from_inputs(&["foo[bar]0.qux=quux"]).unwrap();
+        assert_eq!(
+            to_json(&request.body),
+            r#"{"foo":{"bar":[{"qux":"quux"}]}}"#
+        )
+    }
+
+    #[test]
+    fn parse_flexible_leading_body_param() {
+        let request = ParsedRequest::from_inputs(&["[foo][bar]=baz"]).unwrap();
+        assert_eq!(to_json(&request.body), r#"{"foo":{"bar":"baz"}}"#)
+    }
+
+    #[test]
+    fn parse_multi_nested_body_param() {
+        let request = ParsedRequest::from_inputs(&["foo[bar][baz][qux]=quux"]).unwrap();
+        assert_eq!(
+            to_json(&request.body),
+            r#"{"foo":{"bar":{"baz":{"qux":"quux"}}}}"#
+        )
+    }
+
+    #[test]
+    fn parse_array_end_body_param() {
+        let request = ParsedRequest::from_inputs(&["[]=foo"]).unwrap();
+        assert_eq!(to_json(&request.body), r#"["foo"]"#)
+    }
+
+    #[test]
+    fn parse_nested_array_end_body_param() {
+        let request = ParsedRequest::from_inputs(&["foo[][]=bar"]).unwrap();
+        assert_eq!(to_json(&request.body), r#"{"foo":[["bar"]]}"#)
+    }
+
+    #[test]
+    fn parse_array_index_body_param() {
+        let request = ParsedRequest::from_inputs(&["[1]=foo"]).unwrap();
+        assert_eq!(to_json(&request.body), r#"[null,"foo"]"#)
+    }
+
+    #[test]
+    fn parse_nested_array_index_body_param() {
+        let request = ParsedRequest::from_inputs(&["foo[0][1]=bar"]).unwrap();
+        assert_eq!(to_json(&request.body), r#"{"foo":[[null,"bar"]]}"#)
+    }
+
+    #[test]
+    fn parse_mixed_body_param() {
+        let request = ParsedRequest::from_inputs(&["[][foo][bar][][1][baz]=qux"]).unwrap();
+        assert_eq!(
+            to_json(&request.body),
+            r#"[{"foo":{"bar":[[null,{"baz":"qux"}]]}}]"#
+        )
+    }
+
+    #[test]
+    fn parse_multiple_mixed_body_params() {
+        let request = ParsedRequest::from_inputs(&[
+            "a[b]=c",
+            "a[d]=e",
+            "a[f][]=g",
+            "a[f][1]=h",
+            "a[f][2][i]=j",
+        ])
+        .unwrap();
+        assert_eq!(
+            to_json(&request.body),
+            r#"{"a":{"b":"c","d":"e","f":["g","h",{"i":"j"}]}}"#
+        )
+    }
+
+    #[test]
+    fn parse_raw_json_string_body_param() {
+        let request = ParsedRequest::from_inputs(&[r#"foo:="bar""#]).unwrap();
+        assert_eq!(to_json(&request.body), r#"{"foo":"bar"}"#)
+    }
+
+    #[test]
+    fn parse_raw_json_int_body_param() {
+        let request = ParsedRequest::from_inputs(&["foo:=1"]).unwrap();
+        assert_eq!(to_json(&request.body), r#"{"foo":1}"#)
+    }
+
+    #[test]
+    fn parse_raw_json_null_body_param() {
+        let request = ParsedRequest::from_inputs(&["foo:=null"]).unwrap();
+        assert_eq!(to_json(&request.body), r#"{"foo":null}"#)
+    }
+
+    #[test]
+    fn parse_raw_json_map_body_param() {
+        let request = ParsedRequest::from_inputs(&[r#"foo:={"bar":"baz"}"#]).unwrap();
+        assert_eq!(to_json(&request.body), r#"{"foo":{"bar":"baz"}}"#)
+    }
+
+    fn to_json(body: &[BodyValue]) -> String {
+        json_builder::build(body).unwrap()
+    }
 }

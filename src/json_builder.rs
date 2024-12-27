@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
 
+use crate::parser::BodyValue;
+
 #[derive(Debug, PartialEq)]
 pub enum PathAccess {
     ObjectKey(String),
@@ -8,7 +10,26 @@ pub enum PathAccess {
     ArrayEnd,
 }
 
-pub fn put_value(root: &mut Value, path: &[PathAccess], value: Value) -> Result<()> {
+pub fn build(values: &[BodyValue]) -> Result<String> {
+    let mut root = json!(null);
+
+    for value in values {
+        match value {
+            BodyValue::String { path, value } => {
+                put_value(&mut root, path, json!(value))?;
+            }
+
+            BodyValue::JSON { path, value } => {
+                let value = serde_json::from_str(value)?;
+                put_value(&mut root, path, value)?;
+            }
+        }
+    }
+
+    Ok(root.to_string())
+}
+
+fn put_value(root: &mut Value, path: &[PathAccess], value: Value) -> Result<()> {
     if path.is_empty() {
         *root = value;
         return Ok(());
