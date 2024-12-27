@@ -45,6 +45,13 @@ pub struct CLI {
 
     #[arg(short = 'B', long, help = "Do not print response body")]
     no_body: bool,
+
+    #[arg(
+        long,
+        help = "Maximum number of redirects to follow",
+        default_value = "10"
+    )]
+    max_redirects: usize,
 }
 
 pub async fn run() -> Result<()> {
@@ -90,7 +97,7 @@ pub async fn run() -> Result<()> {
         println!();
     }
 
-    let response = req.send(method).await?;
+    let response = req.send(method, cli.max_redirects).await?;
 
     print_response(response, !cli.no_headers, !cli.no_body).await?;
 

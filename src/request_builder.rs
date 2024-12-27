@@ -5,7 +5,7 @@ use http::{
     header::{Entry, OccupiedEntry},
     HeaderMap, HeaderName, HeaderValue, Method, Version,
 };
-use reqwest::Response;
+use reqwest::{redirect, Response};
 
 use crate::{
     config::Config, json_builder, parser::BodyValue, session::Session, url_builder::URLBuilder,
@@ -116,8 +116,11 @@ impl RequestBuilder {
     }
 
     /// Sends the request
-    pub async fn send(&mut self, method: Method) -> Result<Response> {
-        let client = reqwest::Client::new();
+    pub async fn send(&mut self, method: Method, max_redirects: usize) -> Result<Response> {
+        let client = reqwest::ClientBuilder::new()
+            .redirect(redirect::Policy::limited(max_redirects))
+            .build()?;
+
         let mut request = client
             .request(method, self.url.build()?)
             .version(self.version);
