@@ -1,4 +1,8 @@
-use std::io::ErrorKind;
+use std::{
+    env,
+    io::ErrorKind,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -18,8 +22,13 @@ impl Config {
         }
     }
 
-    pub async fn load(path: &str) -> Result<Self> {
-        let config;
+    pub async fn load() -> Result<Self> {
+        let path = Self::get_config_home()?
+            .join("get")
+            .join("config.json")
+            .to_str()
+            .context("valid config path")?
+            .to_string();
 
         match File::open(path).await {
             Ok(mut file) => {
@@ -29,7 +38,7 @@ impl Config {
                 let config_file: ConfigFile =
                     serde_json::from_slice(&dest).context("parse config file")?;
 
-                config = Config {
+                Ok(Config {
                     fallback_hostname: config_file
                         .fallback_hostname
                         .unwrap_or("localhost".to_string()),
@@ -37,17 +46,18 @@ impl Config {
                     http_hostnames: config_file
                         .http_hostnames
                         .unwrap_or(vec!["localhost".to_string()]),
-                };
+                })
             }
-            Err(err) if err.kind() == ErrorKind::NotFound => {
-                config = Self::default();
-            }
-            Err(err) => {
-                return Err(err).context("open config file");
-            }
+            Err(err) if err.kind() == ErrorKind::NotFound => Ok(Self::default()),
+            Err(err) => Err(err).context("open config file"),
         }
+    }
 
-        Ok(config)
+    fn get_config_home() -> Result<PathBuf> {
+        match env::var("XDG_CONFIG_HOME") {
+            Ok(path) => Ok(Path::new(&path).to_path_buf()),
+            Err(_) => Ok(homedir::my_home()?.context("home dir")?.join(".config")),
+        }
     }
 }
 

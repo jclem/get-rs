@@ -15,11 +15,11 @@ use crate::json_builder::PathAccess;
 pub enum RequestComponent {
     QueryParam { name: String, value: String },
     Header { name: String, value: String },
-    Body(Body),
+    BodyValue(BodyValue),
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Body {
+pub enum BodyValue {
     String {
         path: Vec<PathAccess>,
         value: String,
@@ -51,20 +51,21 @@ fn body(input: &str) -> IResult<&str, RequestComponent> {
     let mut path: Vec<PathAccess> = vec![];
 
     let (input, mut keys) = many0(alt((array_index, object_key, array_end)))(input)?;
+
     path.append(&mut keys);
 
     let body = match alt((value(true, tag(":=")), value(false, tag("="))))(input)? {
-        (value, true) => Body::JSON {
+        (value, true) => BodyValue::JSON {
             path,
             value: value.to_string(),
         },
-        (value, false) => Body::String {
+        (value, false) => BodyValue::String {
             path,
             value: value.to_string(),
         },
     };
 
-    Ok(("", RequestComponent::Body(body)))
+    Ok(("", RequestComponent::BodyValue(body)))
 }
 
 fn object_key(input: &str) -> IResult<&str, PathAccess> {

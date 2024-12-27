@@ -8,7 +8,7 @@ use url;
 
 use crate::config::Config;
 use crate::json_builder;
-use crate::parser::{parse_component, Body, RequestComponent};
+use crate::parser::{parse_component, BodyValue, RequestComponent};
 use crate::session::Session;
 use crate::url_builder::URLBuilder;
 
@@ -101,10 +101,10 @@ fn build_request(
 
     for component in &components {
         match component {
-            RequestComponent::Body(Body::String { path, value }) => {
+            RequestComponent::BodyValue(BodyValue::String { path, value }) => {
                 json_builder::put_value(&mut root, path, json!(value))?;
             }
-            RequestComponent::Body(Body::JSON { path, value }) => {
+            RequestComponent::BodyValue(BodyValue::JSON { path, value }) => {
                 let value = serde_json::from_str(value)?;
                 json_builder::put_value(&mut root, path, value)?;
             }
@@ -336,6 +336,22 @@ mod tests {
             request_body(&request),
             r#"[{"foo":{"bar":[[null,{"baz":"qux"}]]}}]"#
         )
+    }
+
+    #[test]
+    fn parse_overwrite_values() {
+        let components = vec![
+            "a[b]=c".to_string(),
+            "a[b]=d".to_string(),
+            "a[e]f[]=g".to_string(),
+            "a[e]f.0=h".to_string(),
+        ];
+        let mut url_builder = URLBuilder::from_input("http://example.com", "localhost").unwrap();
+        let request = build_request(&mut url_builder, &Session::new(), &components)
+            .unwrap()
+            .build()
+            .unwrap();
+        assert_eq!(request_body(&request), r#"{"a":{"b":"d","e":{"f":["h"]}}}"#)
     }
 
     #[test]
