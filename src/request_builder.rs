@@ -22,7 +22,7 @@ pub struct RequestBuilder {
 
 impl RequestBuilder {
     /// Creates a new RequestBuilder from a URL and configuration object
-    pub async fn from_input(url: &str, config: &Config) -> Result<Self> {
+    pub async fn from_input(scheme: Option<&str>, url: &str, config: &Config) -> Result<Self> {
         let mut url = URLBuilder::from_input(&url, &config.fallback_hostname)?;
         let authority = url.authority().context("URL has authority")?;
         let session = Session::load(&authority).await?.unwrap_or_default();
@@ -30,6 +30,10 @@ impl RequestBuilder {
         if url.scheme == None {
             let hostname = url.hostname.as_ref().context("hostname parsed")?;
             url.scheme = Some(get_scheme(hostname, &session, &config.http_hostnames))
+        }
+
+        if let Some(scheme) = scheme {
+            url.scheme = Some(scheme.to_string());
         }
 
         let mut header_map = HeaderMap::new();
@@ -119,9 +123,7 @@ impl RequestBuilder {
             .version(self.version);
         request = request.headers(self.headers.clone());
 
-        let body = self.body.take();
-
-        if let Some(body) = body {
+        if let Some(body) = self.body.take() {
             request = request.body(body);
         }
 

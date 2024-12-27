@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::Parser;
 use http::{Method, Version};
 use reqwest::Response;
@@ -31,6 +31,12 @@ pub struct CLI {
     )]
     method: Option<String>,
 
+    #[arg(long, help = "Use HTTP, regardless of the URL scheme or session")]
+    http: bool,
+
+    #[arg(long, help = "Use HTTPS, regardless of the URL scheme or session")]
+    https: bool,
+
     #[arg(short, long, help = "Print verbose output")]
     verbose: bool,
 
@@ -52,7 +58,19 @@ pub async fn run() -> Result<()> {
 
     let parsed_request = ParsedRequest::from_inputs(&cli.components)?;
 
-    let mut req = RequestBuilder::from_input(&cli.url, &config)
+    if cli.http && cli.https {
+        bail!("Cannot specify both --http and --https");
+    }
+
+    let scheme = if cli.http {
+        Some("http")
+    } else if cli.https {
+        Some("https")
+    } else {
+        None
+    };
+
+    let mut req = RequestBuilder::from_input(scheme, &cli.url, &config)
         .await?
         .version(Version::default())
         .add_query(&parsed_request.query)
